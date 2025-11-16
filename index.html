@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-key="title">Generador de Diagrama de Gantt</title>
+    <!-- Carga de Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Carga de html2canvas para exportar imagen -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        .task-bar {
+            background-color: #3b82f6; /* bg-blue-500 */
+            color: white;
+            opacity: 0.9;
+            height: 2rem; /* h-8 */
+            border-radius: 0.375rem; /* rounded-md */
+            display: flex;
+            align-items: center;
+            font-size: 0.75rem; /* text-xs */
+            font-weight: 500; /* medium */
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            padding-left: 0.5rem;
+            padding-right: 0.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            transition: all 0.2s ease-in-out;
+        }
+        .task-bar:hover {
+            opacity: 1;
+        }
+        /* Estilo para Tareas Resumen (EDT) */
+        .summary-bar {
+            background-color: #4b5563; /* bg-gray-600 */
+            color: white;
+            height: 1.75rem; /* h-7 */
+            border-radius: 0.25rem; /* rounded-sm */
+            display: flex;
+            align-items: center;
+            font-size: 0.7rem; /* text-xs */
+            font-weight: 600; /* semibold */
+            overflow: hidden;
+            padding-left: 0.5rem;
+            padding-right: 0.5rem;
+            position: relative;
+        }
+        /* "Capuchones" para la barra resumen */
+        .summary-bar::before, .summary-bar::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 0;
+            height: 0;
+            border-style: solid;
+            border-width: 6px 6px 6px 0;
+        }
+        .summary-bar::before {
+            left: -1px;
+            border-color: transparent #4b5563 transparent transparent;
+        }
+        .summary-bar::after {
+            right: -1px;
+            border-width: 6px 0 6px 6px;
+            border-color: transparent transparent transparent #4b5563;
+        }
+        
+        /* Contenedor del diagrama */
+        .gantt-chart-container {
+            width: 100%;
+            overflow-x: auto;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+        }
+        /* Celdas del encabezado de fecha */
+        .date-header-cell {
+            min-width: 40px;
+            text-align: center;
+            font-size: 0.75rem;
+            padding: 0.5rem 0.25rem;
+            border-right: 1px solid #f3f4f6;
+            background-color: #f9fafb;
+            user-select: none;
+        }
+        /* Celdas de nombre de tarea (con indentación) */
+        .task-name-cell {
+            min-width: 250px;
+            max-width: 250px;
+            padding-top: 0.75rem;
+            padding-bottom: 0.75rem;
+            padding-right: 0.75rem;
+            font-weight: 500;
+            border-right: 1px solid #e5e7eb;
+            background-color: #ffffff;
+            position: sticky;
+            left: 0;
+            z-index: 10;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        /* Estilo para Hitos (Milestones) */
+        .milestone-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            position: relative;
+            z-index: 5;
+        }
+        .milestone-shape {
+            width: 24px;
+            height: 24px;
+            background-color: #be185d; /* pink-700 */
+            transform: rotate(45deg);
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        /* Modal de Edición */
+        #edit-modal {
+            background-color: rgba(0, 0, 0, 0.5);
+            transition: opacity 0.3s ease;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans p-4 md:p-8">
+
+    <!-- Botón de Traducción -->
+    <div class="max-w-7xl mx-auto flex justify-end mb-4">
+        <button id="translate-btn" class="text-sm bg-white border border-gray-300 text-gray-700 font-medium py-2 px-4 rounded-lg shadow-sm hover:bg-gray-50 transition duration-200">
+            Switch to English
+        </button>
+    </div>
+
+    <div class="max-w-7xl mx-auto">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6" data-key="title">Generador de Diagrama de Gantt</h1>
+
+        <!-- Contenedor principal -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+            <!-- Columna de Formulario y Lista de Tareas -->
+            <div class="lg:col-span-1 bg-white p-6 rounded-lg shadow-md">
+                <h2 class="text-xl font-semibold mb-4" data-key="addTaskTitle">Añadir Tarea</h2>
+                <form id="add-task-form" class="space-y-4">
+                    <div>
+                        <label for="task-name" class="block text-sm font-medium text-gray-700" data-key="taskNameLabel">Nombre de la Tarea</label>
+                        <input type="text" id="task-name" required class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label for="task-parent" class="block text-sm font-medium text-gray-700" data-key="taskParentLabel">Tarea Padre (EDT)</label>
+                        <select id="task-parent" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500">
+                            <option value="" data-key="taskParentNone">-- Ninguna --</option>
+                            <!-- Opciones se llenan dinámicamente -->
+                        </select>
+                    </div>
+                    <div class="flex gap-4">
+                        <div class="flex-1">
+                            <label for="task-duration" class="block text-sm font-medium text-gray-700" data-key="taskDurationLabel">Duración (días)</label>
+                            <input type="number" id="task-duration" min="0" value="1" required class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                        <div class="flex items-end pb-2">
+                            <label class="flex items-center space-x-2 text-sm font-medium text-gray-700">
+                                <input type="checkbox" id="milestone-checkbox" class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <span data-key="taskIsMilestone">Es un Hito</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="task-dependencies" class="block text-sm font-medium text-gray-700" data-key="taskDependenciesLabel">Dependencias (nombres separados por coma)</label>
+                        <input type="text" id="task-dependencies" data-key="taskDependenciesPlaceholder" placeholder="Ej: Tarea A, Tarea B" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label for="task-start-date" class="block text-sm font-medium text-gray-700" data-key="taskStartDateLabel">Fecha de Inicio (Opcional)</label>
+                        <input type="date" id="task-start-date" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <button type="submit" class="w-full bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow hover:bg-blue-700 transition duration-200" data-key="addTaskBtn">
+                        Añadir Tarea
+                    </button>
+                </form>
+
+                <!-- Lista de Tareas Añadidas -->
+                <div class="mt-8">
+                    <h3 class="text-lg font-semibold mb-3" data-key="taskListTitle">Tareas del Proyecto</h3>
+                    <div id="task-list" class="space-y-2 max-h-80 overflow-y-auto pr-2">
+                        <p class="text-gray-500 text-sm" data-key="noTasks">Aún no hay tareas añadidas.</p>
+                    </div>
+                </div>
+
+                <!-- Botón de Generar -->
+                <div class="mt-6 border-t pt-6">
+                    <button id="generate-gantt-btn" class="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg shadow hover:bg-green-700 transition duration-200" data-key="generateBtn">
+                        Generar Diagrama
+                    </button>
+                </div>
+            </div>
+
+            <!-- Columna del Diagrama de Gantt -->
+            <div class="lg:col-span-2 bg-white p-6 rounded-lg shadow-md">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold" data-key="ganttTitle">Diagrama de Gantt</h2>
+                    <button id="export-btn" class="bg-gray-700 text-white font-semibold py-2 px-4 rounded-lg shadow hover:bg-gray-800 transition duration-200" data-key="exportBtn">
+                        Exportar como PNG
+                    </button>
+                </div>
+                <!-- Mensaje de Error -->
+                <div id="error-message" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg relative mb-4" role="alert">
+                    <strong class="font-bold" data-key="errorPrefix">Error:</strong>
+                    <span class="block sm:inline" id="error-text"></span>
+                </div>
+                <!-- Contenedor del diagrama con scroll -->
+                <div id="gantt-chart-container" class="gantt-chart-container">
+                    <div id="gantt-chart" class="min-w-full">
+                        <p class="text-gray-500 p-4" data-key="ganttEmpty">Añade tareas y presiona "Generar Diagrama" para ver el Gantt.</p>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Modal de Edición (Oculto por defecto) -->
+    <div id="edit-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
+        <div class="bg-white rounded-lg shadow-2xl p-6 w-full max-w-lg">
+            <h3 class="text-xl font-semibold mb-4" data-key="editModalTitle">Editar Tarea</h3>
+            <form id="edit-task-form" class="space-y-4">
+                <input type="hidden" id="edit-task-id">
+                <div>
+                    <label for="edit-task-name" class="block text-sm font-medium text-gray-700" data-key="taskNameLabel">Nombre de la Tarea</label>
+                    <input type="text" id="edit-task-name" required class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                    <label for="edit-task-parent" class="block text-sm font-medium text-gray-700" data-key="taskParentLabel">Tarea Padre (EDT)</label>
+                    <select id="edit-task-parent" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500">
+                        <!-- Opciones se llenan dinámicamente -->
+                    </select>
+                </div>
+                <div class="flex gap-4">
+                    <div class="flex-1">
+                        <label for="edit-task-duration" class="block text-sm font-medium text-gray-700" data-key="taskDurationLabel">Duración (días)</label>
+                        <input type="number" id="edit-task-duration" min="0" required class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div class="flex items-end pb-2">
+                        <label class="flex items-center space-x-2 text-sm font-medium text-gray-700">
+                            <input type="checkbox" id="edit-milestone-checkbox" class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                            <span data-key="taskIsMilestone">Es un Hito</span>
+                        </label>
+                    </div>
+                </div>
+                <div>
+                    <label for="edit-task-dependencies" class="block text-sm font-medium text-gray-700" data-key="taskDependenciesLabel">Dependencias</label>
+                    <input type="text" id="edit-task-dependencies" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                    <label for="edit-task-start-date" class="block text-sm font-medium text-gray-700" data-key="taskStartDateLabel">Fecha de Inicio (Opcional)</label>
+                    <input type="date" id="edit-task-start-date" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div class="flex justify-end gap-3 mt-6">
+                    <button type="button" id="cancel-edit-btn" class="bg-white border border-gray-300 text-gray-700 font-semibold py-2 px-4 rounded-lg shadow-sm hover:bg-gray-50" data-key="cancelBtn">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow hover:bg-blue-700" data-key="updateBtn">
+                        Actualizar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+
+    <script>
+        // --- Traducciones ---
+        const translations = {
+            "es": {
+                "title": "Generador de Diagrama de Gantt",
+                "addTaskTitle": "Añadir Tarea",
+                "taskNameLabel": "Nombre de la Tarea",
+                "taskDurationLabel": "Duración (días)",
+                "taskIsMilestone": "Es un Hito",
+                "taskDependenciesLabel": "Dependencias (nombres separados por coma)",
+                "taskDependenciesPlaceholder": "Ej: Tarea A, Tarea B",
+                "taskStartDateLabel": "Fecha de Inicio (Opcional)",
+                "addTaskBtn": "Añadir Tarea",
+                "taskListTitle": "Tareas del Proyecto",
+                "noTasks": "Aún no hay tareas añadidas.",
+                "generateBtn": "Generar Diagrama",
+                "ganttTitle": "Diagrama de Gantt",
+                "exportBtn": "Exportar como PNG",
+                "translateBtn": "Switch to English",
+                "errorPrefix": "Error:",
+                "errorCircular": (taskName) => `Dependencia circular detectada en la tarea: ${taskName}`,
+                "errorUnknown": (depName, taskName) => `Dependencia desconocida "${depName}" en la tarea "${taskName}"`,
+                "errorDateRange": "El rango de fechas es demasiado grande (límite de 2 años).",
+                "errorNoTasks": "Por favor, añade al menos una tarea.",
+                "errorWBS": "No se pueden calcular las tareas resumen. Revise si hay tareas resumen sin hijos o dependencias WBS circulares.",
+                "ganttEmpty": "Añade tareas y presiona \"Generar Diagrama\" para ver el Gantt.",
+                "taskInList": (name, duration) => duration > 0 ? `${name} (${duration}d)` : `${name} (Hito)`,
+                "taskInListDeps": "Dep:",
+                "taskInListStart": "Inicia:",
+                "taskParentLabel": "Tarea Padre (EDT)",
+                "taskParentNone": "-- Ninguna --",
+                "editModalTitle": "Editar Tarea",
+                "updateBtn": "Actualizar",
+                "cancelBtn": "Cancelar",
+                "editBtnText": "Editar"
+            },
+            "en": {
+                "title": "Gantt Chart Generator",
+                "addTaskTitle": "Add Task",
+                "taskNameLabel": "Task Name",
+                "taskDurationLabel": "Duration (days)",
+                "taskIsMilestone": "Is a Milestone",
+                "taskDependenciesLabel": "Dependencies (names separated by comma)",
+                "taskDependenciesPlaceholder": "Ex: Task A, Task B",
+                "taskStartDateLabel": "Start Date (Optional)",
+                "addTaskBtn": "Add Task",
+                "taskListTitle": "Project Tasks",
+                "noTasks": "No tasks added yet.",
+                "generateBtn": "Generate Chart",
+                "ganttTitle": "Gantt Chart",
+                "exportBtn": "Export as PNG",
+                "translateBtn": "Cambiar a Español",
+                "errorPrefix": "Error:",
+                "errorCircular": (taskName) => `Circular dependency detected at task: ${taskName}`,
+                "errorUnknown": (depName, taskName) => `Unknown dependency "${depName}" in task "${taskName}"`,
+                "errorDateRange": "The date range is too large to draw (2-year limit).",
+                "errorNoTasks": "Please add at least one task.",
+                "errorWBS": "Cannot calculate summary tasks. Check for summary tasks with no children or circular WBS dependencies.",
+                "ganttEmpty": "Add tasks and press \"Generate Chart\" to see the Gantt.",
+                "taskInList": (name, duration) => duration > 0 ? `${name} (${duration}d)` : `${name} (Milestone)`,
+                "taskInListDeps": "Deps:",
+                "taskInListStart": "Starts:",
+                "taskParentLabel": "Parent Task (WBS)",
+                "taskParentNone": "-- None --",
+                "editModalTitle": "Edit Task",
+                "updateBtn": "Update",
+                "cancelBtn": "Cancel",
+                "editBtnText": "Edit"
+            }
+        };
+
+        let currentLang = 'es';
+        let tasks = [];
+        let taskNameMap = new Map();
+        let currentEditingTask = null; // Tarea que se está editando
+        let nextTaskId = 1; // Contador de ID
+
+        // --- DOM Elements ---
+        const taskForm = document.getElementById('add-task-form');
+        const taskListDiv = document.getElementById('task-list');
+        const generateBtn = document.getElementById('generate-gantt-btn');
+        const ganttChartDiv = document.getElementById('gantt-chart');
+        const errorDiv = document.getElementById('error-message');
+        const errorText = document.getElementById('error-text');
+        const milestoneCheckbox = document.getElementById('milestone-checkbox');
+        const taskDurationInput = document.getElementById('task-duration');
+        const taskParentSelect = document.getElementById('task-parent');
+        const translateBtn = document.getElementById('translate-btn');
+        const exportBtn = document.getElementById('export-btn');
+        // --- Modal Elements ---
+        const editModal = document.getElementById('edit-modal');
+        const editTaskForm = document.getElementById('edit-task-form');
+        const cancelEditBtn = document.getElementById('cancel-edit-btn');
+        const editMilestoneCheckbox = document.getElementById('edit-milestone-checkbox');
+        const editTaskDurationInput = document.getElementById('edit-task-duration');
+
+        // --- Translation Logic ---
+        function translate(lang) {
+            currentLang = lang;
+            document.documentElement.lang = lang;
+            document.title = translations[lang].title;
+            document.querySelectorAll('[data-key]').forEach(el => {
+                const key = el.dataset.key;
+                const translation = translations[lang][key];
+                if (typeof translation === 'string') {
+                    if (el.placeholder !== undefined) el.placeholder = translation;
+                    else el.innerHTML = translation;
+                }
+            });
+            translateBtn.textContent = translations[lang].translateBtn;
+            // Re-renderizar UI
+            updateTaskListUI();
+            updateParentDropdowns();
+        }
+
+        // --- Date Helper Functions ---
+        function parseDate(dateString) {
+            if (!dateString) return null;
+            const parts = dateString.split('-').map(Number);
+            return new Date(parts[0], parts[1] - 1, parts[2]);
+        }
+        function dateToInput(date) {
+            if (!date) return '';
+            return date.toISOString().split('T')[0];
+        }
+        function addDays(date, days) {
+            const result = new Date(date);
+            result.setDate(result.getDate() + days);
+            return result;
+        }
+        function diffDays(date1, date2) {
+            const msPerDay = 1000 * 60 * 60 * 24;
+            const utc1 = Date.UTC(date1.getFullYear(), date1.getMonth(), date1.getDate());
+            const utc2 = Date.UTC(date2.getFullYear(), date2.getMonth(), date2.getDate());
+            return Math.floor((utc2 - utc1) / msPerDay);
+        }
+        function formatDate(date) {
+            return `${date.getDate()}/${date.getMonth() + 1}`;
+        }
+
+        // --- Task Structure (WBS) Logic ---
+
+        /**
+         * Recalcula toda la estructura de padres, hijos, niveles y WBS
+         */
+        function updateAllTaskStructures() {
+            // 1. Resetear hijos y niveles
+            for (const task of tasks) {
+                task.children = [];
+                task.level = 0;
+                task.wbs = '';
+                task.isSummary = false;
+            }
+
+            // 2. Construir el árbol (popular .children)
+            for (const task of tasks) {
+                if (task.parentId) {
+                    const parent = tasks.find(t => t.id === task.parentId);
+                    if (parent) {
+                        parent.children.push(task.id);
+                        parent.isSummary = true;
+                    } else {
+                        task.parentId = null; // El padre fue borrado, volver a root
+                    }
+                }
+            }
+            
+            // 3. Asignar Nivel y WBS
+            const rootTasks = tasks.filter(t => !t.parentId);
+            
+            function assignWBS(task, parentWBS, level) {
+                task.level = level;
+                let wbsNumber;
+                
+                if (level === 0) {
+                    const rootIndex = rootTasks.indexOf(task);
+                    wbsNumber = `${rootIndex + 1}`;
+                } else {
+                    const parent = tasks.find(t => t.id === task.parentId);
+                    const siblings = parent.children.map(id => tasks.find(t => t.id === id));
+                    const taskIndex = siblings.indexOf(task);
+                    wbsNumber = `${parentWBS}.${taskIndex + 1}`;
+                }
+                
+                task.wbs = wbsNumber;
+                
+                task.children.forEach(childId => {
+                    const childTask = tasks.find(t => t.id === childId);
+                    if (childTask) assignWBS(childTask, task.wbs, level + 1);
+                });
+            }
+            rootTasks.forEach((task, index) => assignWBS(task, '', 0));
+
+            // 4. Actualizar UIs
+            updateParentDropdowns();
+            updateTaskListUI();
+        }
+
+        /**
+         * Actualiza los <select> de Tarea Padre en el formulario y el modal
+         */
+        function updateParentDropdowns(selectedParentId = null) {
+            const t = translations[currentLang];
+            const dropdowns = [
+                document.getElementById('task-parent'),
+                document.getElementById('edit-task-parent')
+            ];
+            
+            // Solo permitir tareas resumen como padres
+            const parentTasks = tasks.filter(t => t.isSummary || (!t.parentId && !t.children.length));
+            
+            dropdowns.forEach(dropdown => {
+                const currentVal = dropdown.value;
+                dropdown.innerHTML = `<option value="">${t.taskParentNone}</option>`;
+                
+                // Prevenir que una tarea sea su propio padre
+                const currentTaskId = (currentEditingTask ? currentEditingTask.id : null);
+                
+                tasks.forEach(task => {
+                    // No puede ser su propio padre
+                    if (task.id === currentTaskId) return;
+                    // No puede ser su propio descendiente
+                    if (currentTaskId && isDescendant(task, currentEditingTask)) return;
+
+                    const option = document.createElement('option');
+                    option.value = task.id;
+                    option.textContent = `${'.'.repeat(task.level * 2)} ${task.wbs} ${task.name}`;
+                    dropdown.appendChild(option);
+                });
+                
+                // Restaurar selección si es posible
+                dropdown.value = (dropdown.id === 'edit-task-parent' && selectedParentId) ? selectedParentId : (currentVal || '');
+            });
+        }
+        
+        /**
+         * Revisa si 'task' es descendiente de 'potentialParent'
+         */
+        function isDescendant(task, potentialParent) {
+            if (!task.parentId) return false;
+            if (task.parentId === potentialParent.id) return true;
+            const parent = tasks.find(t => t.id === task.parentId);
+            return parent ? isDescendant(parent, potentialParent) : false;
+        }
+
+        // --- Task CRUD Logic ---
+
+        function handleMilestoneToggle(checkbox, durationInput) {
+            if (checkbox.checked) {
+                durationInput.value = 0;
+                durationInput.disabled = true;
+            } else {
+                durationInput.value = durationInput.value > 0 ? durationInput.value : 1;
+                durationInput.disabled = false;
+            }
+        }
+
+        function handleAddTask(e) {
+            e.preventDefault();
+            
+            const name = document.getElementById('task-name').value.trim();
+            const isMilestone = milestoneCheckbox.checked;
+            const duration = isMilestone ? 0 : parseInt(taskDurationInput.value, 10);
+            const dependenciesStr = document.getElementById('task-dependencies').value;
+            const startDateStr = document.getElementById('task-start-date').value;
+            const parentId = document.getElementById('task-parent').value ? parseInt(document.getElementById('task-parent').value, 10) : null;
+
+            if (!name || (duration < 0)) {
+                showError("El nombre y la duración de la tarea son obligatorios.");
+                return;
+            }
+            if (taskNameMap.has(name)) {
+                showError("Ya existe una tarea con ese nombre.");
+                return;
+            }
+
+            const dependencies = dependenciesStr.split(',').map(d => d.trim()).filter(Boolean);
+
+            const task = {
+                id: nextTaskId++,
+                name: name,
+                duration: duration,
+                dependencies: dependencies,
+                fixedStartDate: parseDate(startDateStr),
+                parentId: parentId,
+                // WBS / Resumen
+                children: [],
+                level: 0,
+                wbs: '',
+                isSummary: false,
+                // Calculados
+                startDate: null,
+                endDate: null,
+            };
+
+            tasks.push(task);
+            taskNameMap.set(task.name, task);
+            
+            // Recalcular toda la estructura
+            updateAllTaskStructures();
+            
+            taskForm.reset();
+            taskDurationInput.disabled = false;
+            milestoneCheckbox.checked = false;
+            hideError();
+        }
+
+        /**
+         * Muestra el modal para editar una tarea
+         */
+        function showEditModal(taskId) {
+            currentEditingTask = tasks.find(t => t.id === taskId);
+            if (!currentEditingTask) return;
+
+            document.getElementById('edit-task-id').value = currentEditingTask.id;
+            document.getElementById('edit-task-name').value = currentEditingTask.name;
+            
+            // Actualizar dropdown de padres, deshabilitando descendientes
+            updateParentDropdowns(currentEditingTask.parentId);
+            document.getElementById('edit-task-parent').value = currentEditingTask.parentId || '';
+
+            const isMilestone = currentEditingTask.duration === 0;
+            editMilestoneCheckbox.checked = isMilestone;
+            editTaskDurationInput.value = currentEditingTask.duration;
+            editTaskDurationInput.disabled = isMilestone;
+
+            document.getElementById('edit-task-dependencies').value = currentEditingTask.dependencies.join(', ');
+            document.getElementById('edit-task-start-date').value = dateToInput(currentEditingTask.fixedStartDate);
+            
+            // Tareas resumen no pueden tener duración fija (se calcula)
+            if (currentEditingTask.isSummary) {
+                 editTaskDurationInput.disabled = true;
+                 editMilestoneCheckbox.disabled = true;
+            } else {
+                 editMilestoneCheckbox.disabled = false;
+            }
+
+            editModal.classList.remove('hidden');
+        }
+
+        /**
+         * Oculta el modal de edición
+         */
+        function hideEditModal() {
+            currentEditingTask = null;
+            editModal.classList.add('hidden');
+            editTaskForm.reset();
+        }
+
+        /**
+         * Guarda los cambios de la tarea editada
+         */
+        function handleUpdateTask(e) {
+            e.preventDefault();
+            if (!currentEditingTask) return;
+
+            const oldName = currentEditingTask.name;
+            const newName = document.getElementById('edit-task-name').value.trim();
+            const parentId = document.getElementById('edit-task-parent').value ? parseInt(document.getElementById('edit-task-parent').value, 10) : null;
+            const isMilestone = editMilestoneCheckbox.checked;
+            const duration = isMilestone ? 0 : parseInt(editTaskDurationInput.value, 10);
+            const dependenciesStr = document.getElementById('edit-task-dependencies').value;
+            const startDateStr = document.getElementById('edit-task-start-date').value;
+            
+            if (oldName !== newName && taskNameMap.has(newName)) {
+                showError("Ya existe una tarea con ese nombre.");
+                return;
+            }
+            
+            // Actualizar la tarea
+            currentEditingTask.name = newName;
+            currentEditingTask.parentId = parentId;
+            currentEditingTask.duration = duration;
+            currentEditingTask.dependencies = dependenciesStr.split(',').map(d => d.trim()).filter(Boolean);
+            currentEditingTask.fixedStartDate = parseDate(startDateStr);
+
+            // Actualizar el mapa de nombres
+            if (oldName !== newName) {
+                taskNameMap.delete(oldName);
+                taskNameMap.set(newName, currentEditingTask);
+                
+                // Actualizar dependencias en *otras* tareas
+                tasks.forEach(t => {
+                    if (t.id === currentEditingTask.id) return;
+                    const depIndex = t.dependencies.indexOf(oldName);
+                    if (depIndex > -1) {
+                        t.dependencies[depIndex] = newName;
+                    }
+                });
+            }
+            
+            // Recalcular toda la estructura
+            updateAllTaskStructures();
+            hideEditModal();
+        }
+
+
+        function updateTaskListUI() {
+            const t = translations[currentLang];
+            if (tasks.length === 0) {
+                taskListDiv.innerHTML = `<p class="text-gray-500 text-sm" data-key="noTasks">${t.noTasks}</p>`;
+                return;
+            }
+            
+            // Ordenar por WBS para mostrar la jerarquía
+            const sortedTasks = [...tasks].sort((a, b) => a.wbs.localeCompare(b.wbs, undefined, { numeric: true }));
+
+            taskListDiv.innerHTML = sortedTasks.map(task => `
+                <div class="text-sm p-2 border rounded-md bg-gray-50 flex justify-between items-center">
+                    <div class="flex-1 overflow-hidden">
+                        <span class="font-semibold" style="padding-left: ${task.level * 16}px;">
+                            ${task.wbs} ${t.taskInList(task.name, task.isSummary ? -1 : task.duration)}
+                        </span>
+                        ${task.dependencies.length > 0 ? `<br><span class="text-xs text-gray-600" style="padding-left: ${task.level * 16}px;">${t.taskInListDeps} ${task.dependencies.join(', ')}</span>` : ''}
+                        ${task.fixedStartDate ? `<br><span class="text-xs text-blue-600" style="padding-left: ${task.level * 16}px;">${t.taskInListStart} ${formatDate(task.fixedStartDate)}</span>` : ''}
+                    </div>
+                    <div class="flex-shrink-0 ml-2">
+                        <button onclick="showEditModal(${task.id})" class="text-blue-600 hover:text-blue-800 text-xs font-medium">
+                            ${t.editBtnText}
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // --- Gantt Chart Logic ---
+        function showError(message) {
+            errorText.textContent = message;
+            errorDiv.classList.remove('hidden');
+        }
+        function hideError() {
+            errorDiv.classList.add('hidden');
+        }
+
+        function calculateSchedule() {
+            tasks.forEach(task => {
+                task.startDate = null;
+                task.endDate = null;
+            });
+            
+            let projectStartDate = new Date();
+            const fixedStartDates = tasks.filter(t => t.fixedStartDate).map(t => t.fixedStartDate);
+            if (fixedStartDates.length > 0) {
+                projectStartDate = new Date(Math.min(...fixedStartDates.map(d => d.getTime())));
+            }
+            
+            const calculated = new Set();
+            const calculating = new Set();
+            
+            const leafTasks = tasks.filter(t => !t.isSummary);
+            const summaryTasks = tasks.filter(t => t.isSummary);
+
+            function calculateTaskDate(task) {
+                if (calculated.has(task.name)) return;
+                if (calculating.has(task.name)) {
+                    throw new Error(translations[currentLang].errorCircular(task.name));
+                }
+                calculating.add(task.name);
+
+                let earliestStartDate;
+                if (task.fixedStartDate) {
+                    earliestStartDate = task.fixedStartDate;
+                } else {
+                    earliestStartDate = new Date(projectStartDate);
+                    
+                    let maxDependencyEndDate = null;
+                    for (const depName of task.dependencies) {
+                        const depTask = taskNameMap.get(depName);
+                        if (!depTask) throw new Error(translations[currentLang].errorUnknown(depName, task.name));
+                        
+                        // Si la dependencia es una tarea resumen, asegúrate de que se calcule primero
+                        // (Aunque lo ideal es que las dependencias sean entre tareas hoja)
+                        if (depTask.isSummary && !depTask.startDate) {
+                           // Este caso es complejo, por ahora asumimos que no pasa o se calcula después
+                        } else if (!depTask.isSummary) {
+                            calculateTaskDate(depTask); // Recursión solo para tareas hoja
+                        }
+                        
+                        if (depTask.endDate && (maxDependencyEndDate === null || depTask.endDate > maxDependencyEndDate)) {
+                            maxDependencyEndDate = depTask.endDate;
+                        }
+                    }
+                    if (maxDependencyEndDate) {
+                        earliestStartDate = addDays(maxDependencyEndDate, 1);
+                    }
+                }
+
+                task.startDate = earliestStartDate;
+                task.endDate = addDays(earliestStartDate, task.duration > 0 ? task.duration - 1 : 0);
+                calculating.delete(task.name);
+                calculated.add(task.name);
+            }
+
+            try {
+                // 1. Calcular todas las tareas hoja (leaf tasks)
+                for (const task of leafTasks) {
+                    calculateTaskDate(task);
+                }
+                
+                // 2. Calcular tareas resumen (summary tasks) de abajo hacia arriba
+                let remainingSummaryTasks = summaryTasks.length;
+                let protection = 100; // Evitar bucles infinitos
+                
+                while (remainingSummaryTasks > 0 && protection > 0) {
+                    let calculatedThisPass = 0;
+                    for (const task of summaryTasks) {
+                        if (task.startDate) continue; // Ya calculada
+
+                        const children = task.children.map(id => tasks.find(t => t.id === id));
+                        if (children.length === 0) {
+                            // Tarea resumen sin hijos, no se puede calcular
+                            continue;
+                        }
+
+                        // Revisar si todos los hijos ya tienen fechas
+                        if (children.every(child => child && child.startDate)) {
+                            task.startDate = new Date(Math.min(...children.map(c => c.startDate.getTime())));
+                            task.endDate = new Date(Math.max(...children.map(c => c.endDate.getTime())));
+                            task.duration = diffDays(task.startDate, task.endDate) + 1;
+                            
+                            calculated.add(task.name); // Marcar como calculada
+                            remainingSummaryTasks--;
+                            calculatedThisPass++;
+                        }
+                    }
+                    if (calculatedThisPass === 0 && remainingSummaryTasks > 0) {
+                        // Quedan tareas pero no se pudo calcular ninguna
+                        throw new Error(translations[currentLang].errorWBS);
+                    }
+                    protection--;
+                }
+                
+                hideError();
+                return true;
+            } catch (error) {
+                showError(error.message);
+                return false;
+            }
+        }
+
+        function renderGanttChart() {
+            if (tasks.length === 0 || tasks.some(t => !t.startDate)) {
+                ganttChartDiv.innerHTML = `<p class="text-gray-500 p-4" data-key="ganttEmpty">${translations[currentLang].ganttEmpty}</p>`;
+                return;
+            }
+
+            const allStartDates = tasks.map(t => t.startDate.getTime());
+            const allEndDates = tasks.map(t => t.endDate.getTime());
+            
+            const minDate = new Date(Math.min(...allStartDates));
+            const maxDate = new Date(Math.max(...allEndDates));
+            
+            if (minDate.getTime() === maxDate.getTime()) {
+                maxDate.setDate(maxDate.getDate() + 1);
+            }
+            
+            const totalDays = diffDays(minDate, maxDate) + 1;
+
+            if (totalDays > 365 * 2) {
+                 showError(translations[currentLang].errorDateRange);
+                 return;
+            }
+
+            // --- Generar Encabezado de Fechas ---
+            let headerHTML = '<div class="grid" style="grid-template-columns: 250px 1fr;">';
+            headerHTML += `<div class="task-name-cell font-semibold bg-gray-100" style="padding-left: 12px;">${translations[currentLang].taskNameLabel}</div>`;
+            let dateHeaderTimeline = '<div class="grid" style="grid-template-columns: repeat(' + totalDays + ', 40px);">';
+            let currentDate = new Date(minDate);
+            for (let i = 0; i < totalDays; i++) {
+                dateHeaderTimeline += `<div class="date-header-cell">${formatDate(currentDate)}</div>`;
+                currentDate = addDays(currentDate, 1);
+            }
+            dateHeaderTimeline += '</div>';
+            headerHTML += dateHeaderTimeline + '</div>';
+
+            // --- Generar Filas de Tareas ---
+            let bodyHTML = '';
+            const sortedTasks = [...tasks].sort((a, b) => a.wbs.localeCompare(b.wbs, undefined, { numeric: true }));
+
+            for (const task of sortedTasks) {
+                const startOffset = diffDays(minDate, task.startDate) + 1;
+                
+                let taskRowHTML = '<div class="grid border-t border-gray-200" style="grid-template-columns: 250px 1fr;">';
+                // Celda de nombre con indentación
+                taskRowHTML += `<div class="task-name-cell text-sm" style="padding-left: ${task.level * 20 + 12}px;" title="${task.name}">
+                                    <span class="font-normal text-gray-500 mr-1">${task.wbs}</span> ${task.name}
+                                </div>`;
+                
+                taskRowHTML += `<div class="relative grid h-12 items-center" style="grid-template-columns: repeat(${totalDays}, 40px); border-right: 1px solid #e5e7eb;">`;
+
+                if (task.isSummary) {
+                    // --- Renderizar Tarea Resumen ---
+                     taskRowHTML += `
+                        <div class="summary-bar" style="
+                            grid-column: ${startOffset} / span ${task.duration};
+                            margin: 0 1px;
+                        " title="${task.name} (${task.duration} días)">
+                            ${task.name}
+                        </div>
+                    `;
+                } else if (task.duration === 0) {
+                    // --- Renderizar Hito (Milestone) ---
+                    taskRowHTML += `
+                        <div class="milestone-wrapper" style="grid-column: ${startOffset};" title="${task.name} (${formatDate(task.startDate)})">
+                            <div class="milestone-shape"></div>
+                        </div>
+                    `;
+                } else {
+                    // --- Renderizar Barra de Tarea ---
+                    taskRowHTML += `
+                        <div class="task-bar" style="
+                            grid-column: ${startOffset} / span ${task.duration};
+                            margin: 0 1px;
+                        " title="${task.name} (${task.duration} días)">
+                            ${task.name}
+                        </div>
+                    `;
+                }
+                
+                taskRowHTML += '</div>';
+                taskRowHTML += '</div>';
+                bodyHTML += taskRowHTML;
+            }
+            ganttChartDiv.innerHTML = headerHTML + bodyHTML;
+        }
+
+        function handleGenerateClick() {
+            if (tasks.length === 0) {
+                showError(translations[currentLang].errorNoTasks);
+                return;
+            }
+            const success = calculateSchedule();
+            if (success) {
+                renderGanttChart();
+            }
+        }
+
+        async function handleExportImage() {
+            const chartElement = document.getElementById('gantt-chart');
+            const stickyCells = chartElement.querySelectorAll('.task-name-cell');
+            stickyCells.forEach(cell => cell.style.position = 'static');
+
+            try {
+                const canvas = await html2canvas(chartElement, { scale: 2, backgroundColor: "#ffffff", logging: false });
+                const link = document.createElement('a');
+                link.download = 'diagrama-gantt.png';
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            } catch (err) {
+                console.error("Error al exportar imagen:", err);
+                showError("Ocurrió un error al exportar la imagen.");
+            } finally {
+                stickyCells.forEach(cell => cell.style.position = 'sticky');
+            }
+        }
+
+        // --- Event Listeners ---
+        taskForm.addEventListener('submit', handleAddTask);
+        generateBtn.addEventListener('click', handleGenerateClick);
+        translateBtn.addEventListener('click', () => translate(currentLang === 'es' ? 'en' : 'es'));
+        exportBtn.addEventListener('click', handleExportImage);
+        
+        // Listeners Tarea
+        milestoneCheckbox.addEventListener('change', () => handleMilestoneToggle(milestoneCheckbox, taskDurationInput));
+
+        // Listeners Modal
+        editTaskForm.addEventListener('submit', handleUpdateTask);
+        cancelEditBtn.addEventListener('click', hideEditModal);
+        editMilestoneCheckbox.addEventListener('change', () => handleMilestoneToggle(editMilestoneCheckbox, editTaskDurationInput));
+
+        // Inicializar
+        translate(currentLang);
+        updateAllTaskStructures();
+
+    </script>
+</body>
+</html>
