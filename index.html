@@ -10,7 +10,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
         .task-bar {
-            background-color: #3b82f6; /* bg-blue-500 */
+            /* El color de fondo se aplica con inline-style */
             color: white;
             opacity: 0.9;
             height: 2rem; /* h-8 */
@@ -30,7 +30,6 @@
         .task-bar:hover {
             opacity: 1;
         }
-        /* Estilo para Tareas Resumen (EDT) */
         .summary-bar {
             background-color: #4b5563; /* bg-gray-600 */
             color: white;
@@ -66,14 +65,12 @@
             border-color: transparent transparent transparent #4b5563;
         }
         
-        /* Contenedor del diagrama */
         .gantt-chart-container {
             width: 100%;
             overflow-x: auto;
             border: 1px solid #e5e7eb;
             border-radius: 0.5rem;
         }
-        /* Celdas del encabezado de fecha */
         .date-header-cell {
             min-width: 40px;
             text-align: center;
@@ -83,16 +80,21 @@
             background-color: #f9fafb;
             user-select: none;
         }
-        /* Celdas de nombre de tarea (con indentación) */
-        .task-name-cell {
-            min-width: 250px;
-            max-width: 250px;
-            padding-top: 0.75rem;
-            padding-bottom: 0.75rem;
-            padding-right: 0.75rem;
+        /* Celdas de información de tarea (Base para Nombre y Duración) */
+        .task-info-cell {
+            padding: 0.75rem;
             font-weight: 500;
             border-right: 1px solid #e5e7eb;
             background-color: #ffffff;
+            /* Altura de fila consistente */
+            display: flex;
+            align-items: center;
+            height: 3rem; /* 48px, coincide con h-12 de la fila del gantt */
+        }
+        /* Celda de Nombre (Sticky) */
+        .task-name-cell {
+            min-width: 250px;
+            max-width: 250px;
             position: sticky;
             left: 0;
             z-index: 10;
@@ -100,7 +102,24 @@
             overflow: hidden;
             text-overflow: ellipsis;
         }
-        /* Estilo para Hitos (Milestones) */
+         /* Celda de Duración (Sticky) */
+        .task-duration-cell {
+            min-width: 80px;
+            max-width: 80px;
+            position: sticky;
+            left: 250px; /* Ancho de la celda de nombre */
+            z-index: 10;
+            font-size: 0.875rem;
+            color: #374151; /* text-gray-700 */
+            justify-content: center;
+        }
+        /* Encabezados de la tabla (Sticky) */
+        .header-cell {
+            background-color: #f9fafb; /* bg-gray-50 */
+            font-semibold;
+            z-index: 11; /* Por encima de las celdas de datos */
+        }
+
         .milestone-wrapper {
             display: flex;
             align-items: center;
@@ -118,11 +137,38 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
         
-        /* Modal de Edición */
         #edit-modal {
             background-color: rgba(0, 0, 0, 0.5);
             transition: opacity 0.3s ease;
         }
+        
+        /* Estilo para el input de color */
+        input[type="color"] {
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            width: 40px;
+            height: 40px;
+            padding: 0;
+            border: none;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            background-color: transparent;
+        }
+        input[type="color"]::-webkit-color-swatch-wrapper {
+            padding: 0;
+            border: 1px solid #d1d5db; /* border-gray-300 */
+            border-radius: 0.375rem;
+        }
+        input[type="color"]::-webkit-color-swatch {
+            border: none;
+            border-radius: 0.375rem;
+        }
+        input[type="color"]::-moz-color-swatch {
+            border: none;
+            border-radius: 0.375rem;
+        }
+
     </style>
 </head>
 <body class="bg-gray-100 font-sans p-4 md:p-8">
@@ -137,7 +183,6 @@
     <div class="max-w-7xl mx-auto">
         <h1 class="text-3xl font-bold text-gray-800 mb-6" data-key="title">Generador de Diagrama de Gantt</h1>
 
-        <!-- Contenedor principal -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
             <!-- Columna de Formulario y Lista de Tareas -->
@@ -152,7 +197,6 @@
                         <label for="task-parent" class="block text-sm font-medium text-gray-700" data-key="taskParentLabel">Tarea Padre (EDT)</label>
                         <select id="task-parent" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500">
                             <option value="" data-key="taskParentNone">-- Ninguna --</option>
-                            <!-- Opciones se llenan dinámicamente -->
                         </select>
                     </div>
                     <div class="flex gap-4">
@@ -166,6 +210,10 @@
                                 <span data-key="taskIsMilestone">Es un Hito</span>
                             </label>
                         </div>
+                    </div>
+                    <div id="color-picker-wrapper">
+                        <label for="task-color" class="block text-sm font-medium text-gray-700" data-key="colorLabel">Color de Tarea</label>
+                        <input type="color" id="task-color" value="#3b82f6" class="mt-1">
                     </div>
                     <div>
                         <label for="task-dependencies" class="block text-sm font-medium text-gray-700" data-key="taskDependenciesLabel">Dependencias (nombres separados por coma)</label>
@@ -216,7 +264,6 @@
                     </div>
                 </div>
             </div>
-
         </div>
     </div>
 
@@ -247,6 +294,10 @@
                             <span data-key="taskIsMilestone">Es un Hito</span>
                         </label>
                     </div>
+                </div>
+                <div id="edit-color-picker-wrapper">
+                    <label for="edit-task-color" class="block text-sm font-medium text-gray-700" data-key="colorLabel">Color de Tarea</label>
+                    <input type="color" id="edit-task-color" class="mt-1">
                 </div>
                 <div>
                     <label for="edit-task-dependencies" class="block text-sm font-medium text-gray-700" data-key="taskDependenciesLabel">Dependencias</label>
@@ -303,7 +354,10 @@
                 "editModalTitle": "Editar Tarea",
                 "updateBtn": "Actualizar",
                 "cancelBtn": "Cancelar",
-                "editBtnText": "Editar"
+                "editBtnText": "Editar",
+                "durationCol": "Duración",
+                "colorLabel": "Color de Tarea",
+                "daysUnit": "días"
             },
             "en": {
                 "title": "Gantt Chart Generator",
@@ -336,15 +390,18 @@
                 "editModalTitle": "Edit Task",
                 "updateBtn": "Update",
                 "cancelBtn": "Cancel",
-                "editBtnText": "Edit"
+                "editBtnText": "Edit",
+                "durationCol": "Duration",
+                "colorLabel": "Task Color",
+                "daysUnit": "days"
             }
         };
 
         let currentLang = 'es';
         let tasks = [];
         let taskNameMap = new Map();
-        let currentEditingTask = null; // Tarea que se está editando
-        let nextTaskId = 1; // Contador de ID
+        let currentEditingTask = null;
+        let nextTaskId = 1;
 
         // --- DOM Elements ---
         const taskForm = document.getElementById('add-task-form');
@@ -355,6 +412,7 @@
         const errorText = document.getElementById('error-text');
         const milestoneCheckbox = document.getElementById('milestone-checkbox');
         const taskDurationInput = document.getElementById('task-duration');
+        const taskColorWrapper = document.getElementById('color-picker-wrapper');
         const taskParentSelect = document.getElementById('task-parent');
         const translateBtn = document.getElementById('translate-btn');
         const exportBtn = document.getElementById('export-btn');
@@ -364,6 +422,7 @@
         const cancelEditBtn = document.getElementById('cancel-edit-btn');
         const editMilestoneCheckbox = document.getElementById('edit-milestone-checkbox');
         const editTaskDurationInput = document.getElementById('edit-task-duration');
+        const editColorWrapper = document.getElementById('edit-color-picker-wrapper');
 
         // --- Translation Logic ---
         function translate(lang) {
@@ -379,134 +438,52 @@
                 }
             });
             translateBtn.textContent = translations[lang].translateBtn;
-            // Re-renderizar UI
             updateTaskListUI();
             updateParentDropdowns();
         }
 
         // --- Date Helper Functions ---
-        function parseDate(dateString) {
-            if (!dateString) return null;
-            const parts = dateString.split('-').map(Number);
-            return new Date(parts[0], parts[1] - 1, parts[2]);
-        }
-        function dateToInput(date) {
-            if (!date) return '';
-            return date.toISOString().split('T')[0];
-        }
-        function addDays(date, days) {
-            const result = new Date(date);
-            result.setDate(result.getDate() + days);
-            return result;
-        }
-        function diffDays(date1, date2) {
-            const msPerDay = 1000 * 60 * 60 * 24;
-            const utc1 = Date.UTC(date1.getFullYear(), date1.getMonth(), date1.getDate());
-            const utc2 = Date.UTC(date2.getFullYear(), date2.getMonth(), date2.getDate());
-            return Math.floor((utc2 - utc1) / msPerDay);
-        }
-        function formatDate(date) {
-            return `${date.getDate()}/${date.getMonth() + 1}`;
-        }
+        function parseDate(dateString) { if (!dateString) return null; const parts = dateString.split('-').map(Number); return new Date(parts[0], parts[1] - 1, parts[2]); }
+        function dateToInput(date) { if (!date) return ''; return date.toISOString().split('T')[0]; }
+        function addDays(date, days) { const result = new Date(date); result.setDate(result.getDate() + days); return result; }
+        function diffDays(date1, date2) { const msPerDay = 1000 * 60 * 60 * 24; const utc1 = Date.UTC(date1.getFullYear(), date1.getMonth(), date1.getDate()); const utc2 = Date.UTC(date2.getFullYear(), date2.getMonth(), date2.getDate()); return Math.floor((utc2 - utc1) / msPerDay); }
+        function formatDate(date) { return `${date.getDate()}/${date.getMonth() + 1}`; }
 
         // --- Task Structure (WBS) Logic ---
-
-        /**
-         * Recalcula toda la estructura de padres, hijos, niveles y WBS
-         */
         function updateAllTaskStructures() {
-            // 1. Resetear hijos y niveles
-            for (const task of tasks) {
-                task.children = [];
-                task.level = 0;
-                task.wbs = '';
-                task.isSummary = false;
-            }
-
-            // 2. Construir el árbol (popular .children)
-            for (const task of tasks) {
-                if (task.parentId) {
-                    const parent = tasks.find(t => t.id === task.parentId);
-                    if (parent) {
-                        parent.children.push(task.id);
-                        parent.isSummary = true;
-                    } else {
-                        task.parentId = null; // El padre fue borrado, volver a root
-                    }
-                }
-            }
-            
-            // 3. Asignar Nivel y WBS
+            tasks.forEach(task => { task.children = []; task.level = 0; task.wbs = ''; task.isSummary = false; });
+            tasks.forEach(task => { if (task.parentId) { const parent = tasks.find(t => t.id === task.parentId); if (parent) { parent.children.push(task.id); parent.isSummary = true; } else { task.parentId = null; } } });
             const rootTasks = tasks.filter(t => !t.parentId);
-            
             function assignWBS(task, parentWBS, level) {
                 task.level = level;
                 let wbsNumber;
-                
-                if (level === 0) {
-                    const rootIndex = rootTasks.indexOf(task);
-                    wbsNumber = `${rootIndex + 1}`;
-                } else {
-                    const parent = tasks.find(t => t.id === task.parentId);
-                    const siblings = parent.children.map(id => tasks.find(t => t.id === id));
-                    const taskIndex = siblings.indexOf(task);
-                    wbsNumber = `${parentWBS}.${taskIndex + 1}`;
-                }
-                
+                if (level === 0) { const rootIndex = rootTasks.indexOf(task); wbsNumber = `${rootIndex + 1}`; }
+                else { const parent = tasks.find(t => t.id === task.parentId); const siblings = parent.children.map(id => tasks.find(t => t.id === id)); const taskIndex = siblings.indexOf(task); wbsNumber = `${parentWBS}.${taskIndex + 1}`; }
                 task.wbs = wbsNumber;
-                
-                task.children.forEach(childId => {
-                    const childTask = tasks.find(t => t.id === childId);
-                    if (childTask) assignWBS(childTask, task.wbs, level + 1);
-                });
+                task.children.forEach(childId => { const childTask = tasks.find(t => t.id === childId); if (childTask) assignWBS(childTask, task.wbs, level + 1); });
             }
             rootTasks.forEach((task, index) => assignWBS(task, '', 0));
-
-            // 4. Actualizar UIs
             updateParentDropdowns();
             updateTaskListUI();
         }
-
-        /**
-         * Actualiza los <select> de Tarea Padre en el formulario y el modal
-         */
         function updateParentDropdowns(selectedParentId = null) {
             const t = translations[currentLang];
-            const dropdowns = [
-                document.getElementById('task-parent'),
-                document.getElementById('edit-task-parent')
-            ];
-            
-            // Solo permitir tareas resumen como padres
-            const parentTasks = tasks.filter(t => t.isSummary || (!t.parentId && !t.children.length));
-            
+            const dropdowns = [document.getElementById('task-parent'), document.getElementById('edit-task-parent')];
             dropdowns.forEach(dropdown => {
                 const currentVal = dropdown.value;
                 dropdown.innerHTML = `<option value="">${t.taskParentNone}</option>`;
-                
-                // Prevenir que una tarea sea su propio padre
                 const currentTaskId = (currentEditingTask ? currentEditingTask.id : null);
-                
                 tasks.forEach(task => {
-                    // No puede ser su propio padre
                     if (task.id === currentTaskId) return;
-                    // No puede ser su propio descendiente
                     if (currentTaskId && isDescendant(task, currentEditingTask)) return;
-
                     const option = document.createElement('option');
                     option.value = task.id;
                     option.textContent = `${'.'.repeat(task.level * 2)} ${task.wbs} ${task.name}`;
                     dropdown.appendChild(option);
                 });
-                
-                // Restaurar selección si es posible
                 dropdown.value = (dropdown.id === 'edit-task-parent' && selectedParentId) ? selectedParentId : (currentVal || '');
             });
         }
-        
-        /**
-         * Revisa si 'task' es descendiente de 'potentialParent'
-         */
         function isDescendant(task, potentialParent) {
             if (!task.parentId) return false;
             if (task.parentId === potentialParent.id) return true;
@@ -515,70 +492,51 @@
         }
 
         // --- Task CRUD Logic ---
-
-        function handleMilestoneToggle(checkbox, durationInput) {
+        function handleMilestoneToggle(checkbox, durationInput, colorWrapper) {
             if (checkbox.checked) {
                 durationInput.value = 0;
                 durationInput.disabled = true;
+                colorWrapper.classList.add('hidden');
             } else {
                 durationInput.value = durationInput.value > 0 ? durationInput.value : 1;
                 durationInput.disabled = false;
+                colorWrapper.classList.remove('hidden');
             }
         }
 
         function handleAddTask(e) {
             e.preventDefault();
-            
             const name = document.getElementById('task-name').value.trim();
             const isMilestone = milestoneCheckbox.checked;
             const duration = isMilestone ? 0 : parseInt(taskDurationInput.value, 10);
             const dependenciesStr = document.getElementById('task-dependencies').value;
             const startDateStr = document.getElementById('task-start-date').value;
             const parentId = document.getElementById('task-parent').value ? parseInt(document.getElementById('task-parent').value, 10) : null;
+            const color = document.getElementById('task-color').value;
 
-            if (!name || (duration < 0)) {
-                showError("El nombre y la duración de la tarea son obligatorios.");
-                return;
-            }
-            if (taskNameMap.has(name)) {
-                showError("Ya existe una tarea con ese nombre.");
-                return;
-            }
+            if (!name || (duration < 0)) { showError("El nombre y la duración de la tarea son obligatorios."); return; }
+            if (taskNameMap.has(name)) { showError("Ya existe una tarea con ese nombre."); return; }
 
             const dependencies = dependenciesStr.split(',').map(d => d.trim()).filter(Boolean);
-
             const task = {
-                id: nextTaskId++,
-                name: name,
-                duration: duration,
-                dependencies: dependencies,
-                fixedStartDate: parseDate(startDateStr),
-                parentId: parentId,
-                // WBS / Resumen
-                children: [],
-                level: 0,
-                wbs: '',
-                isSummary: false,
-                // Calculados
-                startDate: null,
-                endDate: null,
+                id: nextTaskId++, name, duration, dependencies, color: color || '#3b82f6',
+                fixedStartDate: parseDate(startDateStr), parentId,
+                children: [], level: 0, wbs: '', isSummary: false,
+                startDate: null, endDate: null,
             };
 
             tasks.push(task);
             taskNameMap.set(task.name, task);
-            
-            // Recalcular toda la estructura
             updateAllTaskStructures();
             
             taskForm.reset();
+            document.getElementById('task-color').value = '#3b82f6'; // Reset color
             taskDurationInput.disabled = false;
             milestoneCheckbox.checked = false;
+            taskColorWrapper.classList.remove('hidden');
             hideError();
         }
 
-        /**
-         * Muestra el modal para editar una tarea
-         */
         function showEditModal(taskId) {
             currentEditingTask = tasks.find(t => t.id === taskId);
             if (!currentEditingTask) return;
@@ -586,41 +544,39 @@
             document.getElementById('edit-task-id').value = currentEditingTask.id;
             document.getElementById('edit-task-name').value = currentEditingTask.name;
             
-            // Actualizar dropdown de padres, deshabilitando descendientes
             updateParentDropdowns(currentEditingTask.parentId);
             document.getElementById('edit-task-parent').value = currentEditingTask.parentId || '';
 
-            const isMilestone = currentEditingTask.duration === 0;
+            const isMilestone = currentEditingTask.duration === 0 && !currentEditingTask.isSummary;
             editMilestoneCheckbox.checked = isMilestone;
             editTaskDurationInput.value = currentEditingTask.duration;
-            editTaskDurationInput.disabled = isMilestone;
-
+            document.getElementById('edit-task-color').value = currentEditingTask.color || '#3b82f6';
+            
             document.getElementById('edit-task-dependencies').value = currentEditingTask.dependencies.join(', ');
             document.getElementById('edit-task-start-date').value = dateToInput(currentEditingTask.fixedStartDate);
             
-            // Tareas resumen no pueden tener duración fija (se calcula)
             if (currentEditingTask.isSummary) {
                  editTaskDurationInput.disabled = true;
                  editMilestoneCheckbox.disabled = true;
-            } else {
+                 editColorWrapper.classList.add('hidden');
+            } else if (isMilestone) {
+                 editTaskDurationInput.disabled = true;
                  editMilestoneCheckbox.disabled = false;
+                 editColorWrapper.classList.add('hidden');
+            } else {
+                 editTaskDurationInput.disabled = false;
+                 editMilestoneCheckbox.disabled = false;
+                 editColorWrapper.classList.remove('hidden');
             }
-
             editModal.classList.remove('hidden');
         }
 
-        /**
-         * Oculta el modal de edición
-         */
         function hideEditModal() {
             currentEditingTask = null;
             editModal.classList.add('hidden');
             editTaskForm.reset();
         }
 
-        /**
-         * Guarda los cambios de la tarea editada
-         */
         function handleUpdateTask(e) {
             e.preventDefault();
             if (!currentEditingTask) return;
@@ -630,60 +586,51 @@
             const parentId = document.getElementById('edit-task-parent').value ? parseInt(document.getElementById('edit-task-parent').value, 10) : null;
             const isMilestone = editMilestoneCheckbox.checked;
             const duration = isMilestone ? 0 : parseInt(editTaskDurationInput.value, 10);
+            const color = document.getElementById('edit-task-color').value;
             const dependenciesStr = document.getElementById('edit-task-dependencies').value;
             const startDateStr = document.getElementById('edit-task-start-date').value;
             
-            if (oldName !== newName && taskNameMap.has(newName)) {
-                showError("Ya existe una tarea con ese nombre.");
-                return;
-            }
+            if (oldName !== newName && taskNameMap.has(newName)) { showError("Ya existe una tarea con ese nombre."); return; }
             
-            // Actualizar la tarea
             currentEditingTask.name = newName;
             currentEditingTask.parentId = parentId;
-            currentEditingTask.duration = duration;
+            currentEditingTask.duration = currentEditingTask.isSummary ? currentEditingTask.duration : duration; // No cambiar duración de resumen
+            currentEditingTask.color = color;
             currentEditingTask.dependencies = dependenciesStr.split(',').map(d => d.trim()).filter(Boolean);
             currentEditingTask.fixedStartDate = parseDate(startDateStr);
 
-            // Actualizar el mapa de nombres
             if (oldName !== newName) {
                 taskNameMap.delete(oldName);
                 taskNameMap.set(newName, currentEditingTask);
-                
-                // Actualizar dependencias en *otras* tareas
                 tasks.forEach(t => {
                     if (t.id === currentEditingTask.id) return;
                     const depIndex = t.dependencies.indexOf(oldName);
-                    if (depIndex > -1) {
-                        t.dependencies[depIndex] = newName;
-                    }
+                    if (depIndex > -1) t.dependencies[depIndex] = newName;
                 });
             }
             
-            // Recalcular toda la estructura
             updateAllTaskStructures();
             hideEditModal();
         }
 
-
         function updateTaskListUI() {
             const t = translations[currentLang];
-            if (tasks.length === 0) {
-                taskListDiv.innerHTML = `<p class="text-gray-500 text-sm" data-key="noTasks">${t.noTasks}</p>`;
-                return;
-            }
+            if (tasks.length === 0) { taskListDiv.innerHTML = `<p class="text-gray-500 text-sm" data-key="noTasks">${t.noTasks}</p>`; return; }
             
-            // Ordenar por WBS para mostrar la jerarquía
             const sortedTasks = [...tasks].sort((a, b) => a.wbs.localeCompare(b.wbs, undefined, { numeric: true }));
-
             taskListDiv.innerHTML = sortedTasks.map(task => `
                 <div class="text-sm p-2 border rounded-md bg-gray-50 flex justify-between items-center">
-                    <div class="flex-1 overflow-hidden">
-                        <span class="font-semibold" style="padding-left: ${task.level * 16}px;">
-                            ${task.wbs} ${t.taskInList(task.name, task.isSummary ? -1 : task.duration)}
-                        </span>
-                        ${task.dependencies.length > 0 ? `<br><span class="text-xs text-gray-600" style="padding-left: ${task.level * 16}px;">${t.taskInListDeps} ${task.dependencies.join(', ')}</span>` : ''}
-                        ${task.fixedStartDate ? `<br><span class="text-xs text-blue-600" style="padding-left: ${task.level * 16}px;">${t.taskInListStart} ${formatDate(task.fixedStartDate)}</span>` : ''}
+                    <div class="flex-1 overflow-hidden flex items-center">
+                        ${!task.isSummary && task.duration > 0 ? 
+                            `<span class="inline-block flex-shrink-0 w-3 h-3 rounded-full mr-2 border border-gray-300" style="background-color: ${task.color}"></span>` :
+                            `<span class="inline-block flex-shrink-0 w-3 h-3 mr-2"></span>` // placeholder
+                        }
+                        <div class="overflow-hidden text-ellipsis whitespace-nowrap">
+                            <span class="font-semibold" style="padding-left: ${task.level * 16}px;">
+                                ${task.wbs} ${t.taskInList(task.name, task.isSummary ? -1 : task.duration)}
+                            </span>
+                            ${task.dependencies.length > 0 ? `<br><span class="text-xs text-gray-600" style="padding-left: ${task.level * 16}px;">${t.taskInListDeps} ${task.dependencies.join(', ')}</span>` : ''}
+                        </div>
                     </div>
                     <div class="flex-shrink-0 ml-2">
                         <button onclick="showEditModal(${task.id})" class="text-blue-600 hover:text-blue-800 text-xs font-medium">
@@ -695,118 +642,72 @@
         }
 
         // --- Gantt Chart Logic ---
-        function showError(message) {
-            errorText.textContent = message;
-            errorDiv.classList.remove('hidden');
-        }
-        function hideError() {
-            errorDiv.classList.add('hidden');
-        }
+        function showError(message) { errorText.textContent = message; errorDiv.classList.remove('hidden'); }
+        function hideError() { errorDiv.classList.add('hidden'); }
 
         function calculateSchedule() {
-            tasks.forEach(task => {
-                task.startDate = null;
-                task.endDate = null;
-            });
-            
+            tasks.forEach(task => { task.startDate = null; task.endDate = null; });
             let projectStartDate = new Date();
             const fixedStartDates = tasks.filter(t => t.fixedStartDate).map(t => t.fixedStartDate);
-            if (fixedStartDates.length > 0) {
-                projectStartDate = new Date(Math.min(...fixedStartDates.map(d => d.getTime())));
-            }
+            if (fixedStartDates.length > 0) projectStartDate = new Date(Math.min(...fixedStartDates.map(d => d.getTime())));
             
-            const calculated = new Set();
-            const calculating = new Set();
-            
+            const calculated = new Set(); const calculating = new Set();
             const leafTasks = tasks.filter(t => !t.isSummary);
             const summaryTasks = tasks.filter(t => t.isSummary);
 
             function calculateTaskDate(task) {
                 if (calculated.has(task.name)) return;
-                if (calculating.has(task.name)) {
-                    throw new Error(translations[currentLang].errorCircular(task.name));
-                }
+                if (calculating.has(task.name)) throw new Error(translations[currentLang].errorCircular(task.name));
                 calculating.add(task.name);
-
                 let earliestStartDate;
-                if (task.fixedStartDate) {
-                    earliestStartDate = task.fixedStartDate;
-                } else {
+                if (task.fixedStartDate) { earliestStartDate = task.fixedStartDate; }
+                else {
                     earliestStartDate = new Date(projectStartDate);
-                    
                     let maxDependencyEndDate = null;
                     for (const depName of task.dependencies) {
                         const depTask = taskNameMap.get(depName);
                         if (!depTask) throw new Error(translations[currentLang].errorUnknown(depName, task.name));
-                        
-                        // Si la dependencia es una tarea resumen, asegúrate de que se calcule primero
-                        // (Aunque lo ideal es que las dependencias sean entre tareas hoja)
-                        if (depTask.isSummary && !depTask.startDate) {
-                           // Este caso es complejo, por ahora asumimos que no pasa o se calcula después
-                        } else if (!depTask.isSummary) {
-                            calculateTaskDate(depTask); // Recursión solo para tareas hoja
-                        }
-                        
+                        if (!depTask.isSummary) calculateTaskDate(depTask);
                         if (depTask.endDate && (maxDependencyEndDate === null || depTask.endDate > maxDependencyEndDate)) {
                             maxDependencyEndDate = depTask.endDate;
                         }
                     }
-                    if (maxDependencyEndDate) {
-                        earliestStartDate = addDays(maxDependencyEndDate, 1);
-                    }
+                    if (maxDependencyEndDate) earliestStartDate = addDays(maxDependencyEndDate, 1);
                 }
-
                 task.startDate = earliestStartDate;
                 task.endDate = addDays(earliestStartDate, task.duration > 0 ? task.duration - 1 : 0);
-                calculating.delete(task.name);
-                calculated.add(task.name);
+                calculating.delete(task.name); calculated.add(task.name);
             }
 
             try {
-                // 1. Calcular todas las tareas hoja (leaf tasks)
-                for (const task of leafTasks) {
-                    calculateTaskDate(task);
-                }
-                
-                // 2. Calcular tareas resumen (summary tasks) de abajo hacia arriba
-                let remainingSummaryTasks = summaryTasks.length;
-                let protection = 100; // Evitar bucles infinitos
-                
+                leafTasks.forEach(calculateTaskDate);
+                let remainingSummaryTasks = summaryTasks.length; let protection = 100;
                 while (remainingSummaryTasks > 0 && protection > 0) {
                     let calculatedThisPass = 0;
                     for (const task of summaryTasks) {
-                        if (task.startDate) continue; // Ya calculada
-
+                        if (task.startDate) continue;
                         const children = task.children.map(id => tasks.find(t => t.id === id));
-                        if (children.length === 0) {
-                            // Tarea resumen sin hijos, no se puede calcular
+                        if (children.length === 0) { 
+                            // Tarea resumen sin hijos, tratar como tarea normal
+                            calculateTaskDate(task);
+                            calculatedThisPass++;
+                            remainingSummaryTasks--;
                             continue;
                         }
-
-                        // Revisar si todos los hijos ya tienen fechas
                         if (children.every(child => child && child.startDate)) {
                             task.startDate = new Date(Math.min(...children.map(c => c.startDate.getTime())));
                             task.endDate = new Date(Math.max(...children.map(c => c.endDate.getTime())));
                             task.duration = diffDays(task.startDate, task.endDate) + 1;
-                            
-                            calculated.add(task.name); // Marcar como calculada
+                            calculated.add(task.name);
                             remainingSummaryTasks--;
                             calculatedThisPass++;
                         }
                     }
-                    if (calculatedThisPass === 0 && remainingSummaryTasks > 0) {
-                        // Quedan tareas pero no se pudo calcular ninguna
-                        throw new Error(translations[currentLang].errorWBS);
-                    }
+                    if (calculatedThisPass === 0 && remainingSummaryTasks > 0) throw new Error(translations[currentLang].errorWBS);
                     protection--;
                 }
-                
-                hideError();
-                return true;
-            } catch (error) {
-                showError(error.message);
-                return false;
-            }
+                hideError(); return true;
+            } catch (error) { showError(error.message); return false; }
         }
 
         function renderGanttChart() {
@@ -817,24 +718,22 @@
 
             const allStartDates = tasks.map(t => t.startDate.getTime());
             const allEndDates = tasks.map(t => t.endDate.getTime());
-            
             const minDate = new Date(Math.min(...allStartDates));
             const maxDate = new Date(Math.max(...allEndDates));
-            
-            if (minDate.getTime() === maxDate.getTime()) {
-                maxDate.setDate(maxDate.getDate() + 1);
-            }
+            if (minDate.getTime() === maxDate.getTime()) maxDate.setDate(maxDate.getDate() + 1);
             
             const totalDays = diffDays(minDate, maxDate) + 1;
+            if (totalDays > 365 * 2) { showError(translations[currentLang].errorDateRange); return; }
 
-            if (totalDays > 365 * 2) {
-                 showError(translations[currentLang].errorDateRange);
-                 return;
-            }
+            // Definición de las columnas de la tabla
+            const tableGridCols = "250px 80px 1fr"; // Nombre | Duración | Timeline
 
-            // --- Generar Encabezado de Fechas ---
-            let headerHTML = '<div class="grid" style="grid-template-columns: 250px 1fr;">';
-            headerHTML += `<div class="task-name-cell font-semibold bg-gray-100" style="padding-left: 12px;">${translations[currentLang].taskNameLabel}</div>`;
+            // --- Generar Encabezado (Tabla + Fechas) ---
+            let headerHTML = `<div class="grid" style="grid-template-columns: ${tableGridCols};">`;
+            // Encabezados de Columna
+            headerHTML += `<div class="task-info-cell task-name-cell header-cell" style="padding-left: 12px;" data-key="taskNameLabel">${translations[currentLang].taskNameLabel}</div>`;
+            headerHTML += `<div class="task-info-cell task-duration-cell header-cell" data-key="durationCol">${translations[currentLang].durationCol}</div>`;
+            // Encabezado de Fechas
             let dateHeaderTimeline = '<div class="grid" style="grid-template-columns: repeat(' + totalDays + ', 40px);">';
             let currentDate = new Date(minDate);
             for (let i = 0; i < totalDays; i++) {
@@ -851,64 +750,44 @@
             for (const task of sortedTasks) {
                 const startOffset = diffDays(minDate, task.startDate) + 1;
                 
-                let taskRowHTML = '<div class="grid border-t border-gray-200" style="grid-template-columns: 250px 1fr;">';
-                // Celda de nombre con indentación
-                taskRowHTML += `<div class="task-name-cell text-sm" style="padding-left: ${task.level * 20 + 12}px;" title="${task.name}">
+                let taskRowHTML = `<div class="grid border-t border-gray-200" style="grid-template-columns: ${tableGridCols};">`;
+                
+                // Celda de Nombre (Datos)
+                taskRowHTML += `<div class="task-info-cell task-name-cell text-sm" style="padding-left: ${task.level * 20 + 12}px;" title="${task.name}">
                                     <span class="font-normal text-gray-500 mr-1">${task.wbs}</span> ${task.name}
                                 </div>`;
                 
+                // Celda de Duración (Datos)
+                const durationText = task.duration === 0 ? '-' : `${task.duration} ${translations[currentLang].daysUnit.substring(0, 1)}`;
+                taskRowHTML += `<div class="task-info-cell task-duration-cell text-sm">${durationText}</div>`;
+                
+                // Celda de Timeline (Barras de Gantt)
                 taskRowHTML += `<div class="relative grid h-12 items-center" style="grid-template-columns: repeat(${totalDays}, 40px); border-right: 1px solid #e5e7eb;">`;
 
                 if (task.isSummary) {
-                    // --- Renderizar Tarea Resumen ---
-                     taskRowHTML += `
-                        <div class="summary-bar" style="
-                            grid-column: ${startOffset} / span ${task.duration};
-                            margin: 0 1px;
-                        " title="${task.name} (${task.duration} días)">
-                            ${task.name}
-                        </div>
-                    `;
+                    taskRowHTML += `<div class="summary-bar" style="grid-column: ${startOffset} / span ${task.duration}; margin: 0 1px;" title="${task.name} (${task.duration} ${translations[currentLang].daysUnit})">${task.name}</div>`;
                 } else if (task.duration === 0) {
-                    // --- Renderizar Hito (Milestone) ---
-                    taskRowHTML += `
-                        <div class="milestone-wrapper" style="grid-column: ${startOffset};" title="${task.name} (${formatDate(task.startDate)})">
-                            <div class="milestone-shape"></div>
-                        </div>
-                    `;
+                    taskRowHTML += `<div class="milestone-wrapper" style="grid-column: ${startOffset};" title="${task.name} (${formatDate(task.startDate)})"><div class="milestone-shape"></div></div>`;
                 } else {
-                    // --- Renderizar Barra de Tarea ---
-                    taskRowHTML += `
-                        <div class="task-bar" style="
-                            grid-column: ${startOffset} / span ${task.duration};
-                            margin: 0 1px;
-                        " title="${task.name} (${task.duration} días)">
-                            ${task.name}
-                        </div>
-                    `;
+                    taskRowHTML += `<div class="task-bar" style="grid-column: ${startOffset} / span ${task.duration}; margin: 0 1px; background-color: ${task.color};" title="${task.name} (${task.duration} ${translations[currentLang].daysUnit})">${task.name}</div>`;
                 }
                 
-                taskRowHTML += '</div>';
-                taskRowHTML += '</div>';
+                taskRowHTML += '</div>'; // Fin celda timeline
+                taskRowHTML += '</div>'; // Fin fila
                 bodyHTML += taskRowHTML;
             }
             ganttChartDiv.innerHTML = headerHTML + bodyHTML;
         }
 
         function handleGenerateClick() {
-            if (tasks.length === 0) {
-                showError(translations[currentLang].errorNoTasks);
-                return;
-            }
+            if (tasks.length === 0) { showError(translations[currentLang].errorNoTasks); return; }
             const success = calculateSchedule();
-            if (success) {
-                renderGanttChart();
-            }
+            if (success) renderGanttChart();
         }
 
         async function handleExportImage() {
             const chartElement = document.getElementById('gantt-chart');
-            const stickyCells = chartElement.querySelectorAll('.task-name-cell');
+            const stickyCells = chartElement.querySelectorAll('.task-name-cell, .task-duration-cell');
             stickyCells.forEach(cell => cell.style.position = 'static');
 
             try {
@@ -917,11 +796,11 @@
                 link.download = 'diagrama-gantt.png';
                 link.href = canvas.toDataURL('image/png');
                 link.click();
-            } catch (err) {
-                console.error("Error al exportar imagen:", err);
-                showError("Ocurrió un error al exportar la imagen.");
-            } finally {
-                stickyCells.forEach(cell => cell.style.position = 'sticky');
+            } catch (err) { console.error("Error al exportar imagen:", err); showError("Ocurrió un error al exportar la imagen."); }
+            finally {
+                // Restaurar la posición sticky
+                chartElement.querySelectorAll('.task-name-cell').forEach(cell => cell.style.position = 'sticky');
+                chartElement.querySelectorAll('.task-duration-cell').forEach(cell => cell.style.position = 'sticky');
             }
         }
 
@@ -930,19 +809,14 @@
         generateBtn.addEventListener('click', handleGenerateClick);
         translateBtn.addEventListener('click', () => translate(currentLang === 'es' ? 'en' : 'es'));
         exportBtn.addEventListener('click', handleExportImage);
-        
-        // Listeners Tarea
-        milestoneCheckbox.addEventListener('change', () => handleMilestoneToggle(milestoneCheckbox, taskDurationInput));
-
-        // Listeners Modal
+        milestoneCheckbox.addEventListener('change', () => handleMilestoneToggle(milestoneCheckbox, taskDurationInput, taskColorWrapper));
         editTaskForm.addEventListener('submit', handleUpdateTask);
         cancelEditBtn.addEventListener('click', hideEditModal);
-        editMilestoneCheckbox.addEventListener('change', () => handleMilestoneToggle(editMilestoneCheckbox, editTaskDurationInput));
+        editMilestoneCheckbox.addEventListener('change', () => handleMilestoneToggle(editMilestoneCheckbox, editTaskDurationInput, editColorWrapper));
 
         // Inicializar
         translate(currentLang);
         updateAllTaskStructures();
-
     </script>
 </body>
 </html>
